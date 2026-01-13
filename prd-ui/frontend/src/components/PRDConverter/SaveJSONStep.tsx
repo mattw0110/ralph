@@ -48,9 +48,9 @@ export default function SaveJSONStep({
         <div className="card success">
           <h2>✓ prd.json Saved Successfully!</h2>
           <p>Your prd.json has been saved to:</p>
-          <code>{projectPath}/prd.json</code>
+          <code>{projectPath}/scripts/ralph/prd.json</code>
           <p className="next-steps">
-            You can now run <code>./scripts/ralph/ralph.sh</code> to start Ralph!
+            You can now run <code>./scripts/ralph/ralph.sh</code> to start Ralph! Ensure you run from your project root directory. <br></br>ex:in project/ run ./scripts/ralph/ralph.sh
           </p>
         </div>
       </div>
@@ -64,7 +64,7 @@ export default function SaveJSONStep({
         <div className="save-info">
           <p><strong>Project:</strong> {projectPath}</p>
           <p><strong>Filename:</strong> prd.json</p>
-          <p><strong>Location:</strong> {projectPath}/prd.json</p>
+          <p><strong>Location:</strong> {projectPath}/scripts/ralph/prd.json</p>
           <p><strong>Stories:</strong> {jsonData.userStories.length}</p>
         </div>
 

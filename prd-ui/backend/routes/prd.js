@@ -26,6 +26,71 @@ router.post('/generate-questions', (req, res, next) => {
 });
 
 /**
+ * Generate PRD markdown content
+ * POST /api/prd/generate
+ */
+router.post('/generate', async (req, res, next) => {
+  try {
+    const { featureDescription, answers, projectName, useSSE } = req.body;
+
+    if (!featureDescription) {
+      return res.status(400).json({ error: 'Feature description is required' });
+    }
+
+    if (!answers) {
+      return res.status(400).json({ error: 'Answers are required' });
+    }
+
+    // If SSE requested, use streaming response
+    if (useSSE) {
+      res.setHeader('Content-Type', 'text/event-stream');
+      res.setHeader('Cache-Control', 'no-cache');
+      res.setHeader('Connection', 'keep-alive');
+
+      const progressCallback = (progress) => {
+        res.write(`data: ${JSON.stringify(progress)}\n\n`);
+      };
+
+      try {
+        const prdContent = await generatePRD(
+          featureDescription,
+          answers,
+          projectName || 'Project',
+          progressCallback
+        );
+        
+        res.write(`data: ${JSON.stringify({ status: 'done', content: prdContent })}\n\n`);
+        res.end();
+      } catch (error) {
+        res.write(`data: ${JSON.stringify({ status: 'error', error: error.message })}\n\n`);
+        res.end();
+      }
+      return;
+    }
+
+    // Regular non-streaming response
+    const progressMessages = [];
+    const progressCallback = (progress) => {
+      progressMessages.push(progress);
+    };
+
+    const prdContent = await generatePRD(
+      featureDescription,
+      answers,
+      projectName || 'Project',
+      progressCallback
+    );
+    
+    res.json({ 
+      content: prdContent,
+      progress: progressMessages // Include progress history for debugging
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
  * Create PRD markdown file
  * POST /api/prd/create
  */
@@ -50,7 +115,7 @@ router.post('/create', async (req, res, next) => {
       if (!answers) {
         return res.status(400).json({ error: 'Either prdContent or answers are required' });
       }
-      content = generatePRD(
+      content = await generatePRD(
         answers.featureDescription || featureName,
         answers,
         projectName || 'Project'

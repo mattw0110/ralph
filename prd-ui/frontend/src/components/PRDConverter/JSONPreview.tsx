@@ -27,6 +27,8 @@ export default function JSONPreview({
   const [converting, setConverting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [validation, setValidation] = useState<any>(null);
+  const [progressStatus, setProgressStatus] = useState<string>('Initializing...');
+  const [progressMessage, setProgressMessage] = useState<string>('');
 
   useEffect(() => {
     convertPRD();
@@ -35,17 +37,83 @@ export default function JSONPreview({
   const convertPRD = async () => {
     setConverting(true);
     setError(null);
+    setProgressStatus('Starting...');
+    setProgressMessage('Preparing to convert PRD to JSON...');
+    
     try {
-      const response = await convertApi.convert({
-        projectPath,
-        prdContent,
-        projectName: projectName || undefined
+      // Use SSE for real-time progress updates
+      const response = await fetch('/api/convert', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          projectPath,
+          prdContent,
+          projectName: projectName || undefined,
+          useSSE: true
+        })
       });
-      setJsonData(response.data.json);
-      setValidation(response.data.validation);
-      onProjectNameChange(response.data.json.project);
+
+      if (!response.ok) {
+        throw new Error('Failed to convert PRD');
+      }
+
+      const reader = response.body?.getReader();
+      const decoder = new TextDecoder();
+
+      if (!reader) {
+        throw new Error('No response body');
+      }
+
+      let buffer = '';
+      let finalJson: PRDJSON | null = null;
+      let finalValidation: any = null;
+
+      while (true) {
+        const { done, value } = await reader.read();
+        
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try {
+              const data = JSON.parse(line.slice(6));
+              
+              if (data.status === 'done' && data.json) {
+                finalJson = data.json;
+                finalValidation = data.validation;
+                setProgressStatus('Complete');
+                setProgressMessage('JSON conversion completed successfully!');
+              } else if (data.status === 'error') {
+                throw new Error(data.error || 'Conversion failed');
+              } else if (data.status && data.message) {
+                setProgressStatus(data.status);
+                setProgressMessage(data.message);
+              }
+            } catch (e) {
+              // Ignore JSON parse errors for non-data lines
+            }
+          }
+        }
+      }
+
+      if (finalJson) {
+        setJsonData(finalJson);
+        setValidation(finalValidation);
+        onProjectNameChange(finalJson.project);
+      } else {
+        throw new Error('No JSON received');
+      }
     } catch (err: any) {
-      setError(err.response?.data?.error || 'Failed to convert PRD');
+      console.error('Failed to convert PRD:', err);
+      setError(err.message || 'Failed to convert PRD');
+      setProgressStatus('Error');
+      setProgressMessage(err.message || 'Conversion failed');
     } finally {
       setConverting(false);
     }
@@ -66,7 +134,21 @@ export default function JSONPreview({
     return (
       <div className="json-preview">
         <div className="card">
-          <div>Converting PRD to JSON...</div>
+          <h2>Converting PRD to JSON...</h2>
+          <div className="progress-container">
+            <div className="progress-status">
+              <strong>Status:</strong> {progressStatus}
+            </div>
+            <div className="progress-message">
+              {progressMessage}
+            </div>
+            <div className="progress-spinner">
+              <div className="spinner"></div>
+            </div>
+            <div className="progress-note">
+              This may take 30-120 seconds when using Cursor CLI agent...
+            </div>
+          </div>
         </div>
       </div>
     );

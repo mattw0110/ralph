@@ -96,11 +96,16 @@ class FileService {
   }
 
   /**
-   * Save prd.json to project root
+   * Save prd.json to scripts/ralph/ directory
    */
   async savePRDJSON(projectPath, jsonData) {
     const validatedProjectPath = validateProjectPath(projectPath);
-    const filePath = path.join(validatedProjectPath, 'prd.json');
+    const scriptsRalphDir = path.join(validatedProjectPath, 'scripts', 'ralph');
+    
+    // Ensure scripts/ralph directory exists
+    await fs.ensureDir(scriptsRalphDir);
+    
+    const filePath = path.join(scriptsRalphDir, 'prd.json');
     
     const content = JSON.stringify(jsonData, null, 2);
     await this.writeFile(filePath, content, validatedProjectPath);

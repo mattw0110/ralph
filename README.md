@@ -98,6 +98,8 @@ This creates `prd.json` with user stories structured for autonomous execution.
 
 Default is 10 iterations.
 
+**Note**: `ralph.sh` uses Cursor CLI agent with `--print --force` flags to enable shell execution. This allows Ralph to run git commands, quality checks, and commits automatically.
+
 Ralph will:
 1. Create a feature branch (from PRD `branchName`)
 2. Pick the highest priority story where `passes: false`
@@ -112,7 +114,7 @@ Ralph will:
 
 | File | Purpose |
 |------|---------|
-| `ralph.sh` | The bash loop that spawns fresh Cursor CLI agent instances |
+| `ralph.sh` | The bash loop that spawns fresh Cursor CLI agent instances (uses `--print --force` flags for shell execution) |
 | `prompt.md` | Instructions given to each Cursor CLI agent instance |
 | `prd.json` | User stories with `passes` status (the task list) |
 | `prd.json.example` | Example PRD format for reference |
@@ -198,6 +200,23 @@ cat progress.txt
 # Check git history
 git log --oneline -10
 ```
+
+### Troubleshooting
+
+**Shell execution unavailable error:**
+- Ensure Cursor CLI is installed and authenticated: `agent --version` and `agent status`
+- Verify `ralph.sh` uses `--print --force` flags (should be automatic)
+- Check that `agent` command is in your PATH
+- The script automatically checks for required commands (`agent` and `jq`) on startup
+
+**Agent command not found:**
+- Install Cursor CLI: https://cursor.com/docs/cli
+- Verify installation: `agent --version`
+- Ensure `agent` is in your PATH
+
+**jq command not found:**
+- Install jq: `brew install jq` (macOS) or see https://stedolan.github.io/jq/download/
+- Verify installation: `jq --version`
 
 ## Customizing prompt.md
 

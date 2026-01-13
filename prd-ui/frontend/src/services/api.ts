@@ -23,6 +23,12 @@ export const prdApi = {
   generateQuestions: (featureDescription: string) =>
     api.post('/prd/generate-questions', { featureDescription }),
   
+  generate: (data: {
+    featureDescription: string;
+    answers: Record<string, string>;
+    projectName?: string;
+  }) => api.post('/prd/generate', data),
+  
   create: (data: {
     projectPath: string;
     featureName: string;

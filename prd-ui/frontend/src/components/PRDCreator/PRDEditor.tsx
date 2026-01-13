@@ -8,6 +8,7 @@ interface PRDEditorProps {
   featureDescription: string;
   answers: Record<string, string>;
   questions: Question[];
+  projectName?: string;
   onSubmit: (content: string) => void;
   onBack: () => void;
 }
@@ -16,11 +17,15 @@ export default function PRDEditor({
   featureDescription,
   answers,
   questions,
+  projectName,
   onSubmit,
   onBack
 }: PRDEditorProps) {
   const [content, setContent] = useState('');
   const [generating, setGenerating] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [progressStatus, setProgressStatus] = useState<string>('Initializing...');
+  const [progressMessage, setProgressMessage] = useState<string>('');
 
   useEffect(() => {
     generatePRDContent();
@@ -28,63 +33,81 @@ export default function PRDEditor({
 
   const generatePRDContent = async () => {
     setGenerating(true);
+    setError(null);
+    setProgressStatus('Starting...');
+    setProgressMessage('Preparing to generate PRD...');
+    
     try {
-      // For now, we'll generate a basic PRD structure
-      // In a full implementation, this would call the backend API
-      const generated = `# PRD: ${featureDescription.split(' ').slice(0, 5).join(' ')}
+      // Use SSE for real-time progress updates
+      const response = await fetch('/api/prd/generate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          featureDescription,
+          answers,
+          projectName: projectName || 'Project',
+          useSSE: true
+        })
+      });
 
-## Introduction
+      if (!response.ok) {
+        throw new Error('Failed to generate PRD');
+      }
 
-${featureDescription}
+      const reader = response.body?.getReader();
+      const decoder = new TextDecoder();
 
-## Goals
+      if (!reader) {
+        throw new Error('No response body');
+      }
 
-- Implement the feature as described
-- Ensure type safety and code quality
-- Maintain existing functionality
+      let buffer = '';
+      let finalContent = '';
 
-## User Stories
+      while (true) {
+        const { done, value } = await reader.read();
+        
+        if (done) break;
 
-### US-001: Initial Implementation
-**Description:** As a developer, I want to implement this feature so that users can benefit from it.
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
 
-**Acceptance Criteria:**
-- [ ] Implementation follows project conventions
-- [ ] Typecheck passes
-- [ ] Tests pass (if applicable)
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try {
+              const data = JSON.parse(line.slice(6));
+              
+              if (data.status === 'done' && data.content) {
+                finalContent = data.content;
+                setProgressStatus('Complete');
+                setProgressMessage('PRD generated successfully!');
+              } else if (data.status === 'error') {
+                throw new Error(data.error || 'Generation failed');
+              } else if (data.status && data.message) {
+                setProgressStatus(data.status);
+                setProgressMessage(data.message);
+              }
+            } catch (e) {
+              // Ignore JSON parse errors for non-data lines
+            }
+          }
+        }
+      }
 
-## Functional Requirements
-
-- FR-1: Implement core functionality
-- FR-2: Ensure proper error handling
-- FR-3: Maintain backward compatibility
-
-## Non-Goals
-
-- No breaking changes to existing APIs
-- No changes to unrelated features
-
-## Technical Considerations
-
-- Follow existing code patterns
-- Use established libraries
-- Ensure type safety
-
-## Success Metrics
-
-- Feature works as described
-- No regressions
-- Code passes quality checks
-
-## Open Questions
-
-- Are there any edge cases to consider?
-- Are there any performance requirements?
-`;
-      setContent(generated);
-    } catch (err) {
+      if (finalContent) {
+        setContent(finalContent);
+      } else {
+        throw new Error('No content received');
+      }
+    } catch (err: any) {
       console.error('Failed to generate PRD:', err);
+      setError(err.message || 'Failed to generate PRD. Please try again.');
       setContent('# PRD\n\nError generating PRD. Please try again.');
+      setProgressStatus('Error');
+      setProgressMessage(err.message || 'Generation failed');
     } finally {
       setGenerating(false);
     }
@@ -99,7 +122,21 @@ ${featureDescription}
     return (
       <div className="prd-editor">
         <div className="card">
-          <div>Generating PRD...</div>
+          <h2>Generating PRD...</h2>
+          <div className="progress-container">
+            <div className="progress-status">
+              <strong>Status:</strong> {progressStatus}
+            </div>
+            <div className="progress-message">
+              {progressMessage}
+            </div>
+            <div className="progress-spinner">
+              <div className="spinner"></div>
+            </div>
+            <div className="progress-note">
+              This may take 30-120 seconds when using Cursor CLI agent...
+            </div>
+          </div>
         </div>
       </div>
     );
@@ -109,6 +146,11 @@ ${featureDescription}
     <div className="prd-editor">
       <div className="card">
         <h2>Review and Edit PRD</h2>
+        {error && (
+          <div className="error-message" style={{ marginBottom: '1rem', color: '#e74c3c' }}>
+            {error}
+          </div>
+        )}
         <div className="editor-container">
           <div className="editor-panel">
             <label>Markdown Editor</label>

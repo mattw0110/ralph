@@ -9,7 +9,7 @@ interface ProjectSelectorProps {
 }
 
 export default function ProjectSelector({ onProjectSelected }: ProjectSelectorProps) {
-  const { projectPath, isValidating, isValid, error, validateProject, setProjectPath } = useProject();
+  const { projectPath, isValidating, isValid, error, validateProject } = useProject();
   const [inputPath, setInputPath] = useState('');
   const [prds, setPrds] = useState<PRDFile[]>([]);
   const [loadingPRDs, setLoadingPRDs] = useState(false);

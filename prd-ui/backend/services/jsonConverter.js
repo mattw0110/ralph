@@ -5,11 +5,161 @@
  */
 
 import { parsePRD, extractFeatureName } from '../utils/markdownParser.js';
+import { exec } from 'child_process';
+import { promisify } from 'util';
+
+const execAsync = promisify(exec);
+
+/**
+ * Check if Cursor CLI agent command is available
+ */
+async function isAgentAvailable() {
+  try {
+    await execAsync('agent --version', { timeout: 5000 });
+    return true;
+  } catch (error) {
+    return false;
+  }
+}
+
+/**
+ * Build prompt for Cursor CLI agent to convert PRD to JSON
+ */
+function buildJSONConversionPrompt(markdown, projectName) {
+  let prompt = `Convert this PRD to prd.json format for the Ralph autonomous agent system.\n\n`;
+  prompt += `Project Name: ${projectName}\n\n`;
+  prompt += `PRD Markdown:\n${markdown}\n\n`;
+  prompt += `Please convert this PRD to the prd.json format following the structure in skills/ralph/SKILL.md. `;
+  prompt += `Ensure all user stories are properly formatted with id, title, description, acceptanceCriteria, priority, passes, and notes fields. `;
+  prompt += `Stories should be ordered by dependencies (schema -> backend -> UI). `;
+  prompt += `Output only the JSON content, do not save to file.`;
+  
+  return prompt;
+}
+
+/**
+ * Extract JSON from agent output
+ */
+function extractJSONFromOutput(output) {
+  // Look for JSON object in the output
+  const jsonMatch = output.match(/\{[\s\S]*\}/);
+  if (jsonMatch) {
+    try {
+      return JSON.parse(jsonMatch[0]);
+    } catch (e) {
+      // Try to find JSON with better pattern
+      const betterMatch = output.match(/\{[\s\S]*"userStories"[\s\S]*\}/);
+      if (betterMatch) {
+        try {
+          return JSON.parse(betterMatch[0]);
+        } catch (e2) {
+          // Last resort: try parsing the whole output
+          return JSON.parse(output.trim());
+        }
+      }
+    }
+  }
+  
+  throw new Error('Could not extract JSON from agent output');
+}
+
+/**
+ * Escape prompt for shell execution
+ */
+function escapePromptForShell(prompt) {
+  return prompt.replace(/'/g, "'\\''");
+}
+
+/**
+ * Convert PRD to JSON using Cursor CLI agent
+ */
+async function convertPRDToJSONWithAgent(markdown, projectName, updateProgress = null) {
+  const log = (status, message) => {
+    if (updateProgress) updateProgress(status, message);
+  };
+
+  log('building', 'Building prompt for Cursor CLI agent...');
+  const prompt = buildJSONConversionPrompt(markdown, projectName);
+  const escapedPrompt = escapePromptForShell(prompt);
+  
+  try {
+    log('executing', 'Executing Cursor CLI agent command...');
+    // --print flag is required to enable shell execution (bash access)
+    // --force flag forces allow commands unless explicitly denied
+    const command = `agent --print --force --output-format json '${escapedPrompt}'`;
+    
+    log('waiting', 'Waiting for agent response (this may take 30-120 seconds)...');
+    const { stdout, stderr } = await execAsync(
+      command,
+      { 
+        timeout: 120000, // 120 second timeout
+        maxBuffer: 1024 * 1024 * 10 // 10MB buffer
+      }
+    );
+    
+    log('parsing', 'Parsing agent output...');
+    const json = extractJSONFromOutput(stdout);
+    
+    // Validate the JSON structure
+    const validation = validateJSON(json);
+    if (!validation.valid) {
+      throw new Error(`Invalid JSON structure: ${validation.errors.join(', ')}`);
+    }
+    
+    log('complete', 'JSON extracted and validated');
+    return json;
+  } catch (error) {
+    log('error', `Agent conversion failed: ${error.message}`);
+    console.error('Agent conversion failed:', error.message);
+    if (error.stderr) {
+      console.error('Agent stderr:', error.stderr);
+    }
+    throw error;
+  }
+}
 
 /**
  * Convert PRD markdown to JSON format
+ * Uses Cursor CLI agent if available, otherwise uses template-based conversion
+ * 
+ * @param {Function} progressCallback - Optional callback for progress updates
  */
-export function convertPRDToJSON(markdown, projectName = 'Project') {
+export async function convertPRDToJSON(markdown, projectName = 'Project', progressCallback = null) {
+  const updateProgress = (status, message) => {
+    if (progressCallback) {
+      progressCallback({ status, message, timestamp: new Date().toISOString() });
+    }
+    console.log(`[JSON Conversion] ${status}: ${message}`);
+  };
+
+  updateProgress('checking', 'Checking if Cursor CLI agent is available...');
+  
+  // Try to use agent first if available
+  const agentAvailable = await isAgentAvailable();
+  
+  if (agentAvailable) {
+    updateProgress('generating', 'Using Cursor CLI agent to convert PRD to JSON...');
+    try {
+      const result = await convertPRDToJSONWithAgent(markdown, projectName, updateProgress);
+      updateProgress('complete', 'JSON conversion completed successfully');
+      return result;
+    } catch (error) {
+      // Fallback to template conversion
+      updateProgress('fallback', `Agent conversion failed, using template: ${error.message}`);
+      console.warn('Falling back to template conversion:', error.message);
+      return convertPRDToJSONTemplate(markdown, projectName);
+    }
+  } else {
+    // Agent not available, use template conversion
+    updateProgress('template', 'Cursor CLI not available, using template conversion...');
+    return convertPRDToJSONTemplate(markdown, projectName);
+  }
+}
+
+/**
+ * Convert PRD markdown to JSON format using template-based approach (fallback)
+ */
+function convertPRDToJSONTemplate(markdown, projectName = 'Project') {
   const parsed = parsePRD(markdown);
   
   // Extract feature name from title

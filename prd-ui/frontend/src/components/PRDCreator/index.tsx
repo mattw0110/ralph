@@ -113,6 +113,7 @@ export default function PRDCreator() {
           featureDescription={featureDescription}
           answers={answers}
           questions={questions}
+          projectName={projectName}
           onSubmit={handleEditorSubmit}
           onBack={handleBack}
         />

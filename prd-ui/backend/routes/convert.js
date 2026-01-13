@@ -11,7 +11,7 @@ const router = express.Router();
  */
 router.post('/', async (req, res, next) => {
   try {
-    const { projectPath, prdPath, prdContent, projectName } = req.body;
+    const { projectPath, prdPath, prdContent, projectName, useSSE } = req.body;
 
     let markdown = prdContent;
 
@@ -26,8 +26,44 @@ router.post('/', async (req, res, next) => {
       return res.status(400).json({ error: 'Either prdContent or prdPath with projectPath is required' });
     }
 
+    // If SSE requested, use streaming response
+    if (useSSE) {
+      res.setHeader('Content-Type', 'text/event-stream');
+      res.setHeader('Cache-Control', 'no-cache');
+      res.setHeader('Connection', 'keep-alive');
+
+      const progressCallback = (progress) => {
+        res.write(`data: ${JSON.stringify(progress)}\n\n`);
+      };
+
+      try {
+        const json = await convertPRDToJSON(markdown, projectName || 'Project', progressCallback);
+
+        // Validate JSON
+        const validation = validateJSON(json);
+        if (!validation.valid) {
+          res.write(`data: ${JSON.stringify({ status: 'error', error: 'Invalid JSON structure', details: validation.errors })}\n\n`);
+          res.end();
+          return;
+        }
+
+        res.write(`data: ${JSON.stringify({ status: 'done', json, validation })}\n\n`);
+        res.end();
+      } catch (error) {
+        res.write(`data: ${JSON.stringify({ status: 'error', error: error.message })}\n\n`);
+        res.end();
+      }
+      return;
+    }
+
+    // Regular non-streaming response
+    const progressMessages = [];
+    const progressCallback = (progress) => {
+      progressMessages.push(progress);
+    };
+
     // Convert to JSON
-    const json = convertPRDToJSON(markdown, projectName || 'Project');
+    const json = await convertPRDToJSON(markdown, projectName || 'Project', progressCallback);
 
     // Validate JSON
     const validation = validateJSON(json);
@@ -40,7 +76,8 @@ router.post('/', async (req, res, next) => {
 
     res.json({
       json,
-      validation
+      validation,
+      progress: progressMessages // Include progress history for debugging
     });
   } catch (error) {
     next(error);
