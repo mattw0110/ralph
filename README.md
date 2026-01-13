@@ -213,6 +213,14 @@ git log --oneline -10
 - Install Cursor CLI: https://cursor.com/docs/cli
 - Verify installation: `agent --version`
 - Ensure `agent` is in your PATH
+- Test agent command: `agent --print --force --output-format text "Test"`
+
+**PRD generation or JSON conversion fails in PRD UI:**
+- Check that Cursor CLI agent is available and authenticated
+- The PRD UI uses `spawn` for reliable agent command execution
+- Agent output is automatically parsed (handles wrapped JSON, markdown code fences, etc.)
+- The UI automatically falls back to template-based methods if agent fails
+- See [PRD UI Documentation](prd-ui/README.md) for detailed troubleshooting
 
 **jq command not found:**
 - Install jq: `brew install jq` (macOS) or see https://stedolan.github.io/jq/download/
@@ -233,10 +241,18 @@ Ralph automatically archives previous runs when you start a new feature (differe
 
 Ralph includes a full-stack web application for creating and managing PRDs through a user-friendly interface. The PRD UI provides:
 
-- **Guided PRD Creation**: Multi-step wizard for creating PRDs
+- **Guided PRD Creation**: Multi-step wizard with intelligent question generation
 - **PRD to JSON Conversion**: Convert markdown PRDs to Ralph's JSON format
+- **Cursor CLI Integration**: Uses Cursor CLI agent for enhanced generation (with template fallback)
 - **Project Management**: Point to any project directory to manage PRDs
 - **Real-time Preview**: See PRD markdown and JSON previews as you work
+
+### Technical Highlights
+
+- Uses Node.js `spawn` for reliable agent command execution (no shell escaping issues)
+- Handles agent output formats (wrapped JSON, markdown code fences, etc.)
+- Automatic fallback to template-based methods if agent unavailable
+- Comprehensive test suite with unit and integration tests
 
 See the [PRD UI Documentation](prd-ui/README.md) for detailed setup and usage instructions.
 

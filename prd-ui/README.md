@@ -97,6 +97,16 @@ pnpm test:backend
 cd backend && pnpm test
 ```
 
+### Run Specific Test Files
+
+```bash
+# Test PRD generation
+cd backend && npm test prdGenerator.test.js
+
+# Test JSON conversion
+cd backend && npm test jsonConverter.test.js
+```
+
 ### Test Coverage
 
 ```bash
@@ -111,6 +121,13 @@ pnpm test:ui
 ```
 
 Opens Vitest UI for interactive test running.
+
+### Test Notes
+
+- **Backend Tests**: Include unit tests and integration tests for PRD generation and JSON conversion
+- **Integration Tests**: Require Cursor CLI agent to be available (tests will skip if not available)
+- **Agent Tests**: Test agent command execution, output extraction, and error handling
+- **Template Tests**: Verify fallback template-based generation/conversion works correctly
 
 ## Usage
 
@@ -181,23 +198,49 @@ The PRD UI integrates with Cursor CLI agent to provide enhanced PRD generation a
 1. **PRD Generation**: When creating a PRD, the UI uses Cursor CLI agent to:
    - Generate intelligent clarifying questions based on your feature description
    - Create a detailed PRD with proper structure and formatting
-   - Uses `agent --print --force` flags to enable shell execution
+   - Uses `agent --print --force --output-format text` flags
+   - Executes via `spawn` for reliable argument passing (no shell escaping issues)
 
 2. **JSON Conversion**: When converting PRD to JSON, the UI uses Cursor CLI agent to:
    - Intelligently parse the PRD markdown
    - Extract user stories, acceptance criteria, and metadata
    - Generate properly formatted `prd.json` for Ralph
+   - Uses `agent --print --force --output-format json` flags
+   - Handles agent output format (wrapped JSON, markdown code fences, etc.)
 
 3. **Fallback Behavior**: If Cursor CLI agent is unavailable or fails:
-   - The UI automatically falls back to template-based generation
+   - The UI automatically falls back to template-based generation/conversion
    - All core functionality remains available
    - No user action required
+
+### Technical Details
+
+**Command Execution:**
+- Uses Node.js `spawn` instead of `exec` for reliable argument passing
+- Avoids shell escaping issues with special characters in prompts
+- Passes arguments directly to the agent process (no shell interpretation)
+- Handles prompts of any length and complexity
+
+**Output Handling:**
+- **Text Output**: Extracts PRD markdown from agent response
+- **JSON Output**: Handles multiple formats:
+  - Agent metadata wrapper with `result` field
+  - Markdown code fences (````json ... ````)
+  - Plain code fences (` ``` ... ``` `)
+  - Embedded JSON in text
+  - Direct JSON output
+
+**Timeout & Error Handling:**
+- Default timeout: 120 seconds (configurable)
+- Automatic fallback to template-based methods on timeout or failure
+- Graceful error handling with informative messages
 
 ### Requirements
 
 - Cursor CLI must be installed and in your PATH
 - Cursor CLI must be authenticated (`agent status` should work)
 - The `agent` command uses `--print --force` flags for shell execution
+- Agent commands are executed with proper timeout handling
 
 ### Verification
 
@@ -205,7 +248,16 @@ To verify Cursor CLI is working:
 ```bash
 agent --version  # Should show version number
 agent status     # Should show authentication status
+
+# Test agent command directly
+agent --print --force --output-format text "Test: What is 2+2?"
 ```
+
+### Performance
+
+- **PRD Generation**: Typically 30-120 seconds (depending on complexity)
+- **JSON Conversion**: Typically 30-90 seconds (depending on PRD size)
+- Both operations show progress updates in the UI
 
 ## Building for Production
 
@@ -249,12 +301,22 @@ Built files will be in `frontend/dist/`
 - The UI will automatically fall back to template-based generation if agent is unavailable
 - Check that `agent` command is in your PATH
 - Agent commands use `--print --force` flags to enable shell execution
+- Test agent directly: `agent --print --force --output-format text "Test prompt"`
 
 **PRD generation or conversion fails:**
 - If using Cursor CLI agent, check that it's properly configured
 - The UI will automatically fall back to template-based methods if agent fails
 - Check backend console logs for detailed error messages
 - Ensure the project path is valid and accessible
+- Generation/conversion can take 30-120 seconds - wait for completion
+- If timeout occurs, agent will automatically fall back to template-based method
+
+**JSON conversion shows "Invalid JSON structure" error:**
+- The agent output format is being handled correctly
+- This usually indicates the agent response couldn't be parsed
+- Check backend logs for the raw agent output
+- The system will automatically fall back to template-based conversion
+- Verify agent is working: `agent --print --force --output-format json "Test"`
 
 **Tests fail:**
 - Run `pnpm install` to ensure all dependencies are installed
