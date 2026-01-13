@@ -6,10 +6,37 @@ set -e
 
 MAX_ITERATIONS=${1:-10}
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PRD_FILE="$SCRIPT_DIR/prd.json"
-PROGRESS_FILE="$SCRIPT_DIR/progress.txt"
-ARCHIVE_DIR="$SCRIPT_DIR/archive"
-LAST_BRANCH_FILE="$SCRIPT_DIR/.last-branch"
+
+# Check for required commands
+if ! command -v agent &> /dev/null; then
+  echo "Error: 'agent' command not found. Please install Cursor CLI: https://cursor.com/docs/cli"
+  exit 1
+fi
+
+if ! command -v jq &> /dev/null; then
+  echo "Error: 'jq' command not found. Please install jq: brew install jq"
+  exit 1
+fi
+
+# Find project root (where prd.json should be located)
+# Check script directory first, then parent directories up to 3 levels
+PROJECT_ROOT="$SCRIPT_DIR"
+for i in {0..3}; do
+  if [ -f "$PROJECT_ROOT/prd.json" ]; then
+    break
+  fi
+  if [ "$PROJECT_ROOT" = "/" ]; then
+    # Fallback to script directory if not found
+    PROJECT_ROOT="$SCRIPT_DIR"
+    break
+  fi
+  PROJECT_ROOT="$(dirname "$PROJECT_ROOT")"
+done
+
+PRD_FILE="$PROJECT_ROOT/prd.json"
+PROGRESS_FILE="$PROJECT_ROOT/progress.txt"
+ARCHIVE_DIR="$PROJECT_ROOT/archive"
+LAST_BRANCH_FILE="$PROJECT_ROOT/.last-branch"
 
 # Archive previous run if branch changed
 if [ -f "$PRD_FILE" ] && [ -f "$LAST_BRANCH_FILE" ]; then
@@ -60,7 +87,10 @@ for i in $(seq 1 $MAX_ITERATIONS); do
   echo "═══════════════════════════════════════════════════════"
   
   # Run Cursor CLI agent with the ralph prompt
-  OUTPUT=$(agent -p "$(cat "$SCRIPT_DIR/prompt.md")" --output-format text 2>&1 | tee /dev/stderr) || true
+  # --print flag is required for non-interactive mode and enables shell execution (bash access)
+  # --force flag forces allow commands unless explicitly denied
+  # --workspace sets the working directory (where prd.json is located)
+  OUTPUT=$(agent --print --force --workspace "$PROJECT_ROOT" --output-format text "$(cat "$SCRIPT_DIR/prompt.md")" 2>&1 | tee /dev/stderr) || true
   
   # Check for completion signal
   if echo "$OUTPUT" | grep -q "<promise>COMPLETE</promise>"; then
