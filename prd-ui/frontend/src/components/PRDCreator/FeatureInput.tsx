@@ -33,10 +33,15 @@ export default function FeatureInput({ onSubmit, onBack }: FeatureInputProps) {
               rows={6}
               required
             />
+            <small className="field-help">
+              Describe what you want to build. This will be used to generate the PRD content.
+            </small>
           </div>
 
           <div className="form-group">
-            <label htmlFor="feature-name">Feature Name (for filename)</label>
+            <label htmlFor="feature-name">
+              Feature Name (for filename and branch)
+            </label>
             <input
               id="feature-name"
               type="text"
@@ -45,7 +50,10 @@ export default function FeatureInput({ onSubmit, onBack }: FeatureInputProps) {
               placeholder="task-priority"
               required
             />
-            <small>Will be saved as prd-{name || 'feature-name'}.md</small>
+            <small className="field-help">
+              Used for filename (prd-{name || 'feature-name'}.md) and branch name (ralph/{name || 'feature-name'}). 
+              Use kebab-case (e.g., "task-priority").
+            </small>
           </div>
 
           <div className="form-group">
@@ -57,6 +65,10 @@ export default function FeatureInput({ onSubmit, onBack }: FeatureInputProps) {
               onChange={(e) => setProjectName(e.target.value)}
               placeholder="MyApp"
             />
+            <small className="field-help">
+              Used in prd.json as the "project" field. Helps Ralph understand project context when working on features. 
+              Defaults to "Project" if not specified.
+            </small>
           </div>
 
           <div className="form-actions">

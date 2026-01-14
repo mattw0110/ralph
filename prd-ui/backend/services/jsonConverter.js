@@ -42,6 +42,7 @@ function buildJSONConversionPrompt(markdown, projectName) {
   prompt += `Project Name: ${projectName}\n\n`;
   prompt += `PRD Markdown:\n${markdown}\n\n`;
   prompt += `Please convert this PRD to the prd.json format following the structure in skills/ralph/SKILL.md. `;
+  prompt += `The output JSON MUST include these top-level fields: "project" (use "${projectName}"), "branchName" (format: "ralph/[feature-name-kebab-case]" derived from PRD title), "description", and "userStories". `;
   prompt += `Ensure all user stories are properly formatted with id, title, description, acceptanceCriteria, priority, passes, and notes fields. `;
   prompt += `Stories should be ordered by dependencies (schema -> backend -> UI). `;
   prompt += `Output only the JSON content, do not save to file.`;

@@ -763,8 +763,13 @@ function generateOpenQuestions(featureDescription, answers) {
 /**
  * Build prompt for Cursor CLI agent to generate PRD
  */
-function buildPRDPrompt(featureDescription, answers) {
+function buildPRDPrompt(featureDescription, answers, projectName = 'Project') {
   let prompt = `Create a PRD for: ${featureDescription}\n\n`;
+  
+  // Add project context for better PRD generation
+  if (projectName && projectName !== 'Project') {
+    prompt += `Project: ${projectName}\n\n`;
+  }
   
   prompt += `The user has answered the following clarifying questions:\n`;
   if (answers.goal) {
@@ -898,7 +903,7 @@ async function generatePRDWithAgent(featureDescription, answers, projectName, up
   };
 
   log('building', 'Building prompt for Cursor CLI agent...');
-  const prompt = buildPRDPrompt(featureDescription, answers);
+  const prompt = buildPRDPrompt(featureDescription, answers, projectName);
   
   try {
     log('executing', 'Executing Cursor CLI agent command...');

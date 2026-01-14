@@ -49,6 +49,14 @@
   font-size: 0.85rem;
 }
 
+.form-group .field-help {
+  display: block;
+  margin-top: 0.5rem;
+  color: #6c757d;
+  font-size: 0.875rem;
+  line-height: 1.4;
+}
+
 .form-actions {
   display: flex;
   gap: 1rem;
