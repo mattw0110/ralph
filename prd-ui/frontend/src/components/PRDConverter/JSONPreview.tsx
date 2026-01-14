@@ -179,6 +179,10 @@ export default function JSONPreview({
             onChange={(e) => handleProjectNameChange(e.target.value)}
             placeholder="Project name"
           />
+          <small className="field-help">
+            This becomes the "project" field in prd.json. Ralph uses this for project context. 
+            The branchName is automatically generated as "ralph/[feature-name]" from the PRD title.
+          </small>
         </div>
 
         {validation && !validation.valid && (
