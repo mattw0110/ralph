@@ -10,20 +10,31 @@ Based on [Geoffrey Huntley's Ralph pattern](https://ghuntley.com/ralph/).
 
 ## Prerequisites
 
-- [Cursor CLI](https://cursor.com/docs/cli) installed and authenticated
+- **Cursor CLI** or **Amp** installed and authenticated (at least one)
 - `jq` installed (`brew install jq` on macOS, `choco install jq` on Windows)
 - A git repository for your project
+
+## Workers
+
+Ralph supports multiple AI agent backends via the `--worker` flag:
+
+| Worker | Command | Description |
+|--------|---------|-------------|
+| `cursor` (default) | `agent` | Cursor CLI agent |
+| `amp` | `amp` | Amp CLI agent |
+
+More workers can be added by extending the worker functions in `ralph.sh`.
 
 ### Windows Users
 
 Ralph includes a PowerShell version (`ralph.ps1`) for native Windows support:
 
 ```powershell
-# Run Ralph on Windows
+# Run Ralph on Windows (default: cursor worker)
 .\ralph.ps1 [max_iterations]
 
-# Or with explicit iteration count
-.\ralph.ps1 -MaxIterations 12
+# With explicit worker and iteration count
+.\ralph.ps1 -Worker amp -MaxIterations 12
 ```
 
 Alternatively, use WSL (Windows Subsystem for Linux) to run `ralph.sh`.
@@ -116,12 +127,23 @@ This creates `prd.json` with user stories structured for autonomous execution.
 ### 3. Run Ralph
 
 ```bash
-./scripts/ralph/ralph.sh [max_iterations]
+# Default: Cursor CLI worker, 10 iterations
+./scripts/ralph/ralph.sh
+
+# Specify max iterations
+./scripts/ralph/ralph.sh 20
+
+# Use Amp as the worker
+./scripts/ralph/ralph.sh --worker amp 15
+
+# Or use short flag
+./scripts/ralph/ralph.sh -w amp 15
+
+# Show help
+./scripts/ralph/ralph.sh --help
 ```
 
-Default is 10 iterations.
-
-**Note**: `ralph.sh` uses Cursor CLI agent with `--print --force` flags to enable shell execution. This allows Ralph to run git commands, quality checks, and commits automatically.
+**Note**: Ralph uses the configured worker agent with `--print --force` flags to enable shell execution. This allows Ralph to run git commands, quality checks, and commits automatically.
 
 Ralph will:
 1. Create a feature branch (from PRD `branchName`)
@@ -228,16 +250,18 @@ git log --oneline -10
 ### Troubleshooting
 
 **Shell execution unavailable error:**
-- Ensure Cursor CLI is installed and authenticated: `agent --version` and `agent status`
+- Ensure your chosen worker is installed and authenticated
+  - Cursor CLI: `agent --version` and `agent status`
+  - Amp: `amp --version`
 - Verify `ralph.sh` uses `--print --force` flags (should be automatic)
-- Check that `agent` command is in your PATH
-- The script automatically checks for required commands (`agent` and `jq`) on startup
+- Check that the agent command is in your PATH
+- The script automatically checks for required commands on startup
 
 **Agent command not found:**
-- Install Cursor CLI: https://cursor.com/docs/cli
-- Verify installation: `agent --version`
-- Ensure `agent` is in your PATH
-- Test agent command: `agent --print --force --output-format text "Test"`
+- For Cursor CLI: Install from https://cursor.com/docs/cli, then verify with `agent --version`
+- For Amp: Install from https://ampcode.com, then verify with `amp --version`
+- Ensure the command is in your PATH
+- Test the command: `agent --print --force --output-format text "Test"` or `amp --yes --print "Test"`
 
 **PRD generation or JSON conversion fails in PRD UI:**
 - Check that Cursor CLI agent is available and authenticated
