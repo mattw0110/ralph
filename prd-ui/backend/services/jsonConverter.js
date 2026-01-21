@@ -46,7 +46,12 @@ function buildJSONConversionPrompt(markdown, projectName) {
   prompt += `Each user story object in the userStories array MUST have ALL of these fields: "id" (string, format: "US-001"), "title" (string), "description" (string), "acceptanceCriteria" (array of strings), "priority" (number, 1-based ordering), "passes" (boolean, set to false), and "notes" (string, can be empty). `;
   prompt += `IMPORTANT: Every story's acceptanceCriteria array MUST include "Typecheck passes" as one of the criteria. If it's not in the PRD, add it automatically. `;
   prompt += `Stories should be ordered by dependencies (schema -> backend -> UI). `;
-  prompt += `Output only the JSON content, do not save to file.`;
+  prompt += `\n\nCRITICAL OUTPUT INSTRUCTIONS:\n`;
+  prompt += `- Output ONLY the raw JSON object, nothing else\n`;
+  prompt += `- Do NOT wrap in markdown code fences\n`;
+  prompt += `- Do NOT include any explanatory text before or after\n`;
+  prompt += `- Do NOT save to any file\n`;
+  prompt += `- The response must start with { and end with }\n`;
   
   return prompt;
 }
@@ -142,7 +147,10 @@ function extractJSONFromString(text) {
   }
 
   // Normalize the text (handle escaped newlines, etc.)
-  const normalizedText = text.replace(/\\n/g, '\n').replace(/\\"/g, '"');
+  let normalizedText = text.replace(/\\n/g, '\n').replace(/\\"/g, '"');
+  
+  // Strip common prefixes like "Here's the JSON:" or "Here is the converted PRD:"
+  normalizedText = normalizedText.replace(/^[\s\S]*?(?=\{|```)/m, '');
   
   // Try to extract from markdown code fence first (```json ... ```)
   const markdownMatch = normalizedText.match(/```json\s*\n?([\s\S]*?)\n?```/);
@@ -150,7 +158,7 @@ function extractJSONFromString(text) {
     try {
       return JSON.parse(markdownMatch[1].trim());
     } catch (e) {
-      // Continue to other methods
+      console.log('[JSON Extraction] Found ```json fence but failed to parse:', e.message);
     }
   }
   
@@ -160,7 +168,46 @@ function extractJSONFromString(text) {
     try {
       return JSON.parse(codeMatch[1].trim());
     } catch (e) {
-      // Continue to other methods
+      console.log('[JSON Extraction] Found code fence but failed to parse:', e.message);
+    }
+  }
+  
+  // Try to find the largest balanced JSON object containing userStories
+  const firstBrace = normalizedText.indexOf('{');
+  if (firstBrace !== -1) {
+    // Find all balanced JSON objects and pick the one with userStories
+    let depth = 0;
+    let startIdx = -1;
+    let candidates = [];
+    
+    for (let i = firstBrace; i < normalizedText.length; i++) {
+      if (normalizedText[i] === '{') {
+        if (depth === 0) startIdx = i;
+        depth++;
+      }
+      if (normalizedText[i] === '}') {
+        depth--;
+        if (depth === 0 && startIdx !== -1) {
+          const jsonStr = normalizedText.substring(startIdx, i + 1);
+          try {
+            const parsed = JSON.parse(jsonStr);
+            // Check if this looks like our PRD format
+            if (parsed.userStories || parsed.project || parsed.branchName) {
+              return parsed;
+            }
+            candidates.push({ parsed, length: jsonStr.length });
+          } catch (e) {
+            // Not valid JSON, continue
+          }
+          startIdx = -1;
+        }
+      }
+    }
+    
+    // If we found any valid JSON objects, return the largest one
+    if (candidates.length > 0) {
+      candidates.sort((a, b) => b.length - a.length);
+      return candidates[0].parsed;
     }
   }
   
@@ -170,42 +217,7 @@ function extractJSONFromString(text) {
     try {
       return JSON.parse(projectMatch[0]);
     } catch (e) {
-      // Continue to other methods
-    }
-  }
-  
-  // Try to find JSON object in the text with userStories
-  const jsonMatch = normalizedText.match(/\{[\s\S]*"userStories"[\s\S]*\}/);
-  if (jsonMatch) {
-    try {
-      return JSON.parse(jsonMatch[0]);
-    } catch (e) {
-      // Continue to other methods
-    }
-  }
-  
-  // Try to find any JSON object that starts with { and ends with }
-  // Use a more careful approach - find balanced braces
-  const firstBrace = normalizedText.indexOf('{');
-  if (firstBrace !== -1) {
-    let depth = 0;
-    let lastBrace = -1;
-    for (let i = firstBrace; i < normalizedText.length; i++) {
-      if (normalizedText[i] === '{') depth++;
-      if (normalizedText[i] === '}') {
-        depth--;
-        if (depth === 0) {
-          lastBrace = i;
-          break;
-        }
-      }
-    }
-    if (lastBrace !== -1) {
-      try {
-        return JSON.parse(normalizedText.substring(firstBrace, lastBrace + 1));
-      } catch (e) {
-        // Continue to other methods
-      }
+      console.log('[JSON Extraction] Found project/userStories pattern but failed to parse');
     }
   }
   
@@ -287,22 +299,54 @@ async function convertPRDToJSONWithAgent(markdown, projectName, updateProgress =
     // --print flag is required to enable shell execution (bash access)
     // --force flag forces allow commands unless explicitly denied
     // Use spawn to avoid shell escaping issues with long prompts
-    log('waiting', 'Waiting for agent response (this may take 30-120 seconds)...');
+    log('waiting', 'Waiting for agent response (this may take 60-180 seconds)...');
     
-    const { stdout, stderr } = await execAgentCommand(prompt, 'json', 120000);
+    // Use 'text' output format - 'json' wraps in metadata which conflicts with our PRD JSON
+    // Increased timeout to 180 seconds (3 min) for larger PRDs
+    const { stdout, stderr } = await execAgentCommand(prompt, 'text', 180000);
     
     log('parsing', 'Parsing agent output...');
     
-    const json = extractJSONFromOutput(stdout);
+    // Debug: Log raw output info (truncated for readability)
+    const outputPreview = stdout.length > 500 ? stdout.substring(0, 500) + '...[truncated]' : stdout;
+    console.log('[JSON Conversion] Raw agent output length:', stdout.length);
+    console.log('[JSON Conversion] Raw agent output preview:', outputPreview);
     
-    // Validate the JSON structure
-    const validation = validateJSON(json);
-    if (!validation.valid) {
-      throw new Error(`Invalid JSON structure: ${validation.errors.join(', ')}`);
+    // Check for truncated JSON (common issue with large PRDs)
+    const trimmedOutput = stdout.trim();
+    if (trimmedOutput.startsWith('{') && !trimmedOutput.endsWith('}')) {
+      // Count braces to confirm truncation
+      const openBraces = (trimmedOutput.match(/\{/g) || []).length;
+      const closeBraces = (trimmedOutput.match(/\}/g) || []).length;
+      if (openBraces > closeBraces) {
+        console.error('[JSON Conversion] TRUNCATED JSON DETECTED');
+        console.error(`[JSON Conversion] Open braces: ${openBraces}, Close braces: ${closeBraces}`);
+        console.error('[JSON Conversion] Output ends with:', trimmedOutput.substring(Math.max(0, trimmedOutput.length - 100)));
+        throw new Error(`JSON response was truncated (${openBraces} open braces, ${closeBraces} close braces). The PRD may be too large. Try simplifying the PRD or reducing the number of user stories.`);
+      }
     }
     
-    log('complete', 'JSON extracted and validated');
-    return json;
+    try {
+      const json = extractJSONFromOutput(stdout);
+      
+      // Validate the JSON structure
+      const validation = validateJSON(json);
+      if (!validation.valid) {
+        throw new Error(`Invalid JSON structure: ${validation.errors.join(', ')}`);
+      }
+      
+      log('complete', 'JSON extracted and validated');
+      return json;
+    } catch (extractError) {
+      // Log more details about what we received
+      console.error('[JSON Conversion] Failed to extract JSON from output');
+      console.error('[JSON Conversion] Output starts with:', stdout.substring(0, 200));
+      console.error('[JSON Conversion] Output ends with:', stdout.substring(Math.max(0, stdout.length - 200)));
+      console.error('[JSON Conversion] Contains "userStories":', stdout.includes('userStories'));
+      console.error('[JSON Conversion] Contains "project":', stdout.includes('"project"'));
+      console.error('[JSON Conversion] Contains code fence:', stdout.includes('```'));
+      throw extractError;
+    }
   } catch (error) {
     log('error', `Agent conversion failed: ${error.message}`);
     console.error('Agent conversion failed:', error.message);
@@ -336,13 +380,22 @@ export async function convertPRDToJSON(markdown, projectName = 'Project', progre
     updateProgress('generating', 'Using Cursor CLI agent to convert PRD to JSON...');
     try {
       const result = await convertPRDToJSONWithAgent(markdown, projectName, updateProgress);
-      updateProgress('complete', 'JSON conversion completed successfully');
+      // Note: convertPRDToJSONWithAgent already logs 'complete' status via updateProgress callback
       return result;
     } catch (error) {
       // Fallback to template conversion
       updateProgress('fallback', `Agent conversion failed, using template: ${error.message}`);
       console.warn('Falling back to template conversion:', error.message);
-      return convertPRDToJSONTemplate(markdown, projectName);
+      try {
+        const templateResult = convertPRDToJSONTemplate(markdown, projectName);
+        console.log('[JSON Conversion] Template conversion finished, stories:', templateResult.userStories?.length || 0);
+        updateProgress('complete', `Template conversion completed (${templateResult.userStories?.length || 0} user stories)`);
+        return templateResult;
+      } catch (templateError) {
+        console.error('[JSON Conversion] Template conversion also failed:', templateError);
+        updateProgress('error', `Template conversion failed: ${templateError.message}`);
+        throw templateError;
+      }
     }
   } else {
     // Agent not available, use template conversion
@@ -355,11 +408,17 @@ export async function convertPRDToJSON(markdown, projectName = 'Project', progre
  * Convert PRD markdown to JSON format using template-based approach (fallback)
  */
 function convertPRDToJSONTemplate(markdown, projectName = 'Project') {
+  console.log('[JSON Conversion] Starting template conversion...');
+  console.log('[JSON Conversion] Markdown length:', markdown?.length || 0);
+  
   const parsed = parsePRD(markdown);
+  console.log('[JSON Conversion] Parsed PRD title:', parsed.title);
+  console.log('[JSON Conversion] Parsed user stories count:', parsed.userStories?.length || 0);
   
   // Extract feature name from title
   const featureName = extractFeatureName(parsed.title || 'feature');
   const branchName = `ralph/${featureName}`;
+  console.log('[JSON Conversion] Generated branch name:', branchName);
 
   // Convert user stories
   const userStories = parsed.userStories.map((story, index) => {

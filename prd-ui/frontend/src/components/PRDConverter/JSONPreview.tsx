@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { convertApi } from '../../services/api';
@@ -29,12 +29,29 @@ export default function JSONPreview({
   const [validation, setValidation] = useState<any>(null);
   const [progressStatus, setProgressStatus] = useState<string>('Initializing...');
   const [progressMessage, setProgressMessage] = useState<string>('');
+  
+  // Prevent duplicate conversions (React StrictMode double-invokes effects)
+  const conversionInProgress = useRef(false);
+  const lastConvertedContent = useRef<string>('');
 
   useEffect(() => {
+    // Skip if already converting or if content hasn't changed
+    if (conversionInProgress.current || lastConvertedContent.current === prdContent) {
+      return;
+    }
     convertPRD();
   }, [prdContent, projectPath]);
 
   const convertPRD = async () => {
+    // Prevent duplicate calls
+    if (conversionInProgress.current) {
+      console.log('[JSONPreview] Conversion already in progress, skipping');
+      return;
+    }
+    
+    conversionInProgress.current = true;
+    lastConvertedContent.current = prdContent;
+    
     setConverting(true);
     setError(null);
     setProgressStatus('Starting...');
@@ -116,6 +133,7 @@ export default function JSONPreview({
       setProgressMessage(err.message || 'Conversion failed');
     } finally {
       setConverting(false);
+      conversionInProgress.current = false;
     }
   };
 
@@ -146,7 +164,7 @@ export default function JSONPreview({
               <div className="spinner"></div>
             </div>
             <div className="progress-note">
-              This may take 30-120 seconds when using Cursor CLI agent...
+              This may take 60-180 seconds when using Cursor CLI agent...
             </div>
           </div>
         </div>

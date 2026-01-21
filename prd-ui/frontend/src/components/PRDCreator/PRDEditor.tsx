@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { prdApi } from '../../services/api';
 import type { Question } from '../../types/prd';
@@ -26,12 +26,27 @@ export default function PRDEditor({
   const [error, setError] = useState<string | null>(null);
   const [progressStatus, setProgressStatus] = useState<string>('Initializing...');
   const [progressMessage, setProgressMessage] = useState<string>('');
+  
+  // Prevent duplicate generations (React StrictMode double-invokes effects)
+  const generationInProgress = useRef(false);
 
   useEffect(() => {
+    // Skip if already generating
+    if (generationInProgress.current) {
+      return;
+    }
     generatePRDContent();
   }, []);
 
   const generatePRDContent = async () => {
+    // Prevent duplicate calls
+    if (generationInProgress.current) {
+      console.log('[PRDEditor] Generation already in progress, skipping');
+      return;
+    }
+    
+    generationInProgress.current = true;
+    
     setGenerating(true);
     setError(null);
     setProgressStatus('Starting...');
@@ -110,6 +125,7 @@ export default function PRDEditor({
       setProgressMessage(err.message || 'Generation failed');
     } finally {
       setGenerating(false);
+      generationInProgress.current = false;
     }
   };
 
